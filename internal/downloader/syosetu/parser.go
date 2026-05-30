@@ -60,6 +60,29 @@ func ParseTOC(ncode string, source string) (*model.Novel, error) {
 	return novel, nil
 }
 
+// NextTOCURL returns the next table-of-contents page URL when pagination exists.
+func NextTOCURL(ncode string, source string) (string, error) {
+	doc, err := downloader.ParseHTML(source)
+	if err != nil {
+		return "", err
+	}
+	link := downloader.FindFirst(doc, func(n *xhtml.Node) bool {
+		return n.Type == xhtml.ElementNode &&
+			n.Data == "a" &&
+			downloader.HasClass(n, "c-pager__item") &&
+			downloader.HasClass(n, "c-pager__item--next")
+	})
+	if link == nil {
+		return "", nil
+	}
+	href := downloader.Attr(link, "href")
+	if href == "" {
+		return "", nil
+	}
+
+	return absoluteSyosetuURL(href, ncode), nil
+}
+
 // ParseShortStory parses a short story page as a single episode.
 func ParseShortStory(ncode string, source string) (*model.Novel, error) {
 	doc, err := downloader.ParseHTML(source)

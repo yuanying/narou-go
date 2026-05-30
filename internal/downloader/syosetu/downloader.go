@@ -62,6 +62,11 @@ func (d *Downloader) Download(ctx context.Context, input string) (*model.Novel, 
 			return nil, err
 		}
 	}
+	if novel.NovelType == NovelTypeSeries {
+		if err := d.appendPagedTOC(ctx, novel, ncode, source); err != nil {
+			return nil, err
+		}
+	}
 
 	var images []model.Image
 	for i := range novel.Episodes {
@@ -87,6 +92,28 @@ func (d *Downloader) Download(ctx context.Context, input string) (*model.Novel, 
 	novel.Images = dedupeImages(images)
 
 	return novel, nil
+}
+
+func (d *Downloader) appendPagedTOC(ctx context.Context, novel *model.Novel, ncode string, source string) error {
+	for {
+		nextURL, err := NextTOCURL(ncode, source)
+		if err != nil {
+			return err
+		}
+		if nextURL == "" {
+			return nil
+		}
+		source, err = d.client.GetString(ctx, nextURL)
+		if err != nil {
+			return err
+		}
+		next, err := ParseTOC(ncode, source)
+		if err != nil {
+			return err
+		}
+		novel.Chapters = append(novel.Chapters, next.Chapters...)
+		novel.Episodes = append(novel.Episodes, next.Episodes...)
+	}
 }
 
 // Update redownloads metadata and changed/new episodes.

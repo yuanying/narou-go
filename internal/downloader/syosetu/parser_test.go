@@ -47,6 +47,16 @@ func TestParseTOC(t *testing.T) {
 	}
 }
 
+func TestNextTOCURL(t *testing.T) {
+	got, err := NextTOCURL("n9669bk", readFixture(t, "toc.html"))
+	if err != nil {
+		t.Fatalf("NextTOCURL() error = %v", err)
+	}
+	if got != "https://ncode.syosetu.com/n9669bk/?p=2" {
+		t.Fatalf("NextTOCURL() = %q", got)
+	}
+}
+
 func TestParseShortStory(t *testing.T) {
 	novel, err := ParseShortStory("n1111aa", readFixture(t, "short.html"))
 	if err != nil {
