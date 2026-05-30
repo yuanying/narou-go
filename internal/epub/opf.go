@@ -24,6 +24,14 @@ func packageOPF(book Book) string {
 	for i := range book.Sections {
 		writeBuilder(&b, fmt.Sprintf(`    <item id="p%03d" href="text/p%03d.xhtml" media-type="application/xhtml+xml"></item>`+"\n", i+1, i+1))
 	}
+	coverIndex := coverImageIndex(book.Images)
+	for i, image := range book.Images {
+		properties := ""
+		if i == coverIndex {
+			properties = ` properties="cover-image"`
+		}
+		writeBuilder(&b, fmt.Sprintf(`    <item id="image-%03d" href="%s" media-type="%s"%s></item>`+"\n", i+1, escapeXML(image.Href), escapeXML(image.MediaType), properties))
+	}
 	writeBuilder(&b, "  </manifest>\n")
 	writeBuilder(&b, "  <spine>\n")
 	for i := range book.Sections {
