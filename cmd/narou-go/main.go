@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -10,8 +11,13 @@ import (
 	"strings"
 
 	"github.com/yuanying/narou-go/internal/converter"
+	"github.com/yuanying/narou-go/internal/downloader"
+	"github.com/yuanying/narou-go/internal/downloader/kakuyomu"
+	"github.com/yuanying/narou-go/internal/downloader/syosetu"
 	"github.com/yuanying/narou-go/internal/epub"
 	"github.com/yuanying/narou-go/internal/library"
+	"github.com/yuanying/narou-go/internal/model"
+	"github.com/yuanying/narou-go/internal/storage"
 )
 
 func main() {
@@ -30,6 +36,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		err = runList(args[1:], stdout)
 	case "convert":
 		err = runConvert(args[1:], stdout)
+	case "download":
+		err = runDownload(args[1:], stdout)
+	case "update":
+		err = runUpdate(args[1:], stdout)
 	default:
 		writeUsage(stderr)
 		return 2
@@ -137,6 +147,125 @@ func runConvert(args []string, stdout io.Writer) error {
 	return nil
 }
 
+func runDownload(args []string, stdout io.Writer) error {
+	options, err := parseWebOptions("download", args)
+	if err != nil {
+		return err
+	}
+	d, err := selectDownloader(options.target)
+	if err != nil {
+		return err
+	}
+	novel, err := d.Download(context.Background(), options.target)
+	if err != nil {
+		return err
+	}
+
+	return saveDownloadedNovel(options, novel, stdout)
+}
+
+func runUpdate(args []string, stdout io.Writer) error {
+	options, err := parseWebOptions("update", args)
+	if err != nil {
+		return err
+	}
+	existing, err := storage.LoadNovel(options.dataPath, options.target)
+	if err != nil {
+		return err
+	}
+	d, err := selectDownloader(existing.SourceURL)
+	if err != nil {
+		return err
+	}
+	novel, err := d.Update(context.Background(), existing)
+	if err != nil {
+		return err
+	}
+
+	return saveDownloadedNovel(options, novel, stdout)
+}
+
+func saveDownloadedNovel(options webOptions, novel *model.Novel, stdout io.Writer) error {
+	httpClient := downloader.NewHTTPClient()
+	imageDir := filepath.Join(storage.NovelDir(options.dataPath, novel.ID), "images")
+	novel.Images = downloader.DownloadImages(context.Background(), httpClient, novel.Images, imageDir)
+	if err := storage.SaveNovel(options.dataPath, novel); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(stdout, "saved %s\n", storage.NovelDir(options.dataPath, novel.ID))
+
+	if options.epub {
+		outputPath := filepath.Join(storage.NovelDir(options.dataPath, novel.ID), novel.ID+".epub")
+		file, err := os.Create(outputPath)
+		if err != nil {
+			return fmt.Errorf("create epub: %w", err)
+		}
+		if err := epub.Build(file, model.ToEPUBBook(novel)); err != nil {
+			closeErr := file.Close()
+			if closeErr != nil {
+				return fmt.Errorf("build epub: %w; close epub: %w", err, closeErr)
+			}
+			return err
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("close epub: %w", err)
+		}
+		_, _ = fmt.Fprintf(stdout, "wrote %s\n", outputPath)
+	}
+
+	return nil
+}
+
+type webOptions struct {
+	target   string
+	dataPath string
+	epub     bool
+}
+
+func parseWebOptions(command string, args []string) (webOptions, error) {
+	options := webOptions{dataPath: "./data"}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--data":
+			if i+1 >= len(args) {
+				return options, fmt.Errorf("--data requires a value")
+			}
+			options.dataPath = args[i+1]
+			i++
+		case strings.HasPrefix(arg, "--data="):
+			options.dataPath = strings.TrimPrefix(arg, "--data=")
+		case arg == "--epub":
+			options.epub = true
+		case strings.HasPrefix(arg, "-"):
+			return options, fmt.Errorf("unknown option: %s", arg)
+		case options.target == "":
+			options.target = arg
+		default:
+			return options, fmt.Errorf("unexpected argument: %s", arg)
+		}
+	}
+	if options.target == "" {
+		return options, fmt.Errorf("%s requires target", command)
+	}
+
+	return options, nil
+}
+
+func selectDownloader(input string) (downloader.Downloader, error) {
+	downloaders := []downloader.Downloader{
+		syosetu.New(nil),
+		kakuyomu.New(nil),
+	}
+	for _, d := range downloaders {
+		if d.Match(input) {
+			return d, nil
+		}
+	}
+
+	return nil, fmt.Errorf("unsupported download target: %s", input)
+}
+
 type convertOptions struct {
 	ncode       string
 	libraryPath string
@@ -221,4 +350,6 @@ func entryNcode(entry library.NovelEntry) string {
 func writeUsage(stderr io.Writer) {
 	_, _ = fmt.Fprintln(stderr, "usage: narou-go list [--library path]")
 	_, _ = fmt.Fprintln(stderr, "       narou-go convert ncode [--library path] [--output path]")
+	_, _ = fmt.Fprintln(stderr, "       narou-go download [--data path] [--epub] target")
+	_, _ = fmt.Fprintln(stderr, "       narou-go update [--data path] [--epub] id")
 }
