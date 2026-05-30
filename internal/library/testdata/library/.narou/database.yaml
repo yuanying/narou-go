@@ -1,0 +1,21 @@
+---
+0:
+  id: 0
+  author: テスト著者
+  title: サンプル小説
+  file_title: n1231id サンプル小説
+  toc_url: https://ncode.syosetu.com/n1231id/
+  sitename: 小説家になろう
+  novel_type: 1
+  end: false
+  tags:
+  - sample
+1:
+  id: 1
+  author: カクヨム著者
+  title: カクヨム小説
+  file_title: 1177354054882961557 カクヨム小説
+  toc_url: https://kakuyomu.jp/works/1177354054882961557
+  sitename: カクヨム
+  novel_type: 1
+  end: true
