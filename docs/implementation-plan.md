@@ -60,8 +60,8 @@ narou-go/
 | 完了 | HTML Converter | `internal/converter` | 本文 HTML を EPUB 用 XHTML に変換できる | `go test ./...` |
 | 完了 | EPUB3 Builder | `internal/epub` | 最小 EPUB3 ZIP を生成できる | `go test ./...` |
 | 完了 | Image Support | `internal/converter`, `internal/epub` | 挿絵 URL を解決し、画像を EPUB に含められる | `go test ./...` |
-| ⏳ 次に着手 | CLI | `cmd/narou-go` | `list` / `convert` の入口が動く | `go test ./...` |
-| 未着手 | Integration / Validation | 全体 | `./library` の代表作品を読み、EPUB 生成まで確認できる | `go test ./...` |
+| 完了 | CLI | `cmd/narou-go` | `list` / `convert` の入口が動く | `go test ./...` |
+| ⏳ 次に着手 | Integration / Validation | 全体 | `./library` の代表作品を読み、EPUB 生成まで確認できる | `go test ./...` |
 
 ### 状態の更新ルール
 
