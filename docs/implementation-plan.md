@@ -57,8 +57,8 @@ narou-go/
 | 状態 | フェーズ | 対象 | 完了条件 | 検証 |
 |------|----------|------|----------|------|
 | 完了 | Library Reader | `internal/library` | `database.yaml`、`toc.yaml`、`本文/*.yaml` を fixture から読み込める | `go test ./...` |
-| ⏳ 次に着手 | HTML Converter | `internal/converter` | 本文 HTML を EPUB 用 XHTML に変換できる | `go test ./...` |
-| 未着手 | EPUB3 Builder | `internal/epub` | 最小 EPUB3 ZIP を生成できる | `go test ./...` |
+| 完了 | HTML Converter | `internal/converter` | 本文 HTML を EPUB 用 XHTML に変換できる | `go test ./...` |
+| ⏳ 次に着手 | EPUB3 Builder | `internal/epub` | 最小 EPUB3 ZIP を生成できる | `go test ./...` |
 | 未着手 | Image Support | `internal/converter`, `internal/epub` | 挿絵 URL を解決し、画像を EPUB に含められる | `go test ./...` |
 | 未着手 | CLI | `cmd/narou-go` | `list` / `convert` の入口が動く | `go test ./...` |
 | 未着手 | Integration / Validation | 全体 | `./library` の代表作品を読み、EPUB 生成まで確認できる | `go test ./...` |
