@@ -56,7 +56,7 @@ func ParseWork(source string) (*model.Novel, error) {
 	}
 
 	currentChapter := ""
-	for _, tocRef := range work.RefList("tableOfContents") {
+	for _, tocRef := range work.RefListFallback("tableOfContentsV2", "tableOfContents") {
 		toc := state[tocRef]
 		if chapterRef := toc.Ref("chapter"); chapterRef != "" {
 			chapter := state[chapterRef]
@@ -223,4 +223,15 @@ func (s stateObject) RefList(key string) []string {
 	}
 
 	return refs
+}
+
+func (s stateObject) RefListFallback(keys ...string) []string {
+	for _, key := range keys {
+		refs := s.RefList(key)
+		if len(refs) > 0 {
+			return refs
+		}
+	}
+
+	return nil
 }
