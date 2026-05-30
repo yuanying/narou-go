@@ -1,0 +1,15 @@
+---
+title: サンプル小説
+author: テスト著者
+toc_url: https://ncode.syosetu.com/n1231id/
+story: |-
+  あらすじです。
+subtitles:
+- index: '1'
+  href: "/n1231id/1/"
+  chapter: 第一章
+  subchapter: ''
+  subtitle: 第一話
+  file_subtitle: 第一話
+  subdate: 2023/03/19 05:00
+  subupdate: 2023/03/22 12:26
