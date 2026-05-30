@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -59,6 +60,16 @@ func TestRunConvertRequiresNcode(t *testing.T) {
 	}
 }
 
+func TestParseConvertOptionsKindle(t *testing.T) {
+	got, err := parseConvertOptions([]string{"n1231id", "--kindle"})
+	if err != nil {
+		t.Fatalf("parseConvertOptions() error = %v", err)
+	}
+	if got.ncode != "n1231id" || !got.kindle {
+		t.Fatalf("parseConvertOptions() = %#v", got)
+	}
+}
+
 func TestParseWebOptions(t *testing.T) {
 	got, err := parseWebOptions("download", []string{"--epub", "--data", "data-dir", "n9669bk"})
 	if err != nil {
@@ -66,6 +77,41 @@ func TestParseWebOptions(t *testing.T) {
 	}
 	if got.target != "n9669bk" || got.dataPath != "data-dir" || !got.epub {
 		t.Fatalf("parseWebOptions() = %#v", got)
+	}
+}
+
+func TestParseWebOptionsKindleImpliesEPUB(t *testing.T) {
+	got, err := parseWebOptions("download", []string{"--kindle", "n9669bk"})
+	if err != nil {
+		t.Fatalf("parseWebOptions() error = %v", err)
+	}
+	if !got.kindle || !got.epub {
+		t.Fatalf("parseWebOptions() = %#v, want kindle and epub", got)
+	}
+}
+
+func TestCreateKindleRunsAphrael(t *testing.T) {
+	binDir := t.TempDir()
+	script := filepath.Join(binDir, "aphrael")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ncp \"$1\" \"$2\"\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	epubPath := filepath.Join(t.TempDir(), "sample.epub")
+	if err := os.WriteFile(epubPath, []byte("epub"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	got, err := createKindle(epubPath)
+	if err != nil {
+		t.Fatalf("createKindle() error = %v", err)
+	}
+	if got != filepath.Join(filepath.Dir(epubPath), "sample.mobi") {
+		t.Fatalf("createKindle() = %q", got)
+	}
+	if _, err := os.Stat(got); err != nil {
+		t.Fatalf("kindle output was not created: %v", err)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -122,28 +123,25 @@ func runConvert(args []string, stdout io.Writer) error {
 	if outputPath == "" {
 		outputPath = entry.Title + ".epub"
 	}
-	file, err := os.Create(outputPath)
-	if err != nil {
-		return fmt.Errorf("create output: %w", err)
-	}
-	if err := epub.Build(file, epub.Book{
+	if err := buildEPUB(outputPath, epub.Book{
 		Title:    toc.Title,
 		Author:   toc.Author,
 		Language: "ja",
 		Sections: sections,
 		Images:   epubImages(imageRegistry.Assets()),
 	}); err != nil {
-		closeErr := file.Close()
-		if closeErr != nil {
-			return fmt.Errorf("build epub: %w; close output: %w", err, closeErr)
-		}
 		return err
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close output: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(stdout, "wrote %s\n", outputPath)
+	if options.kindle {
+		kindlePath, err := createKindle(outputPath)
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(stdout, "wrote %s\n", kindlePath)
+	}
+
 	return nil
 }
 
@@ -196,21 +194,17 @@ func saveDownloadedNovel(options webOptions, novel *model.Novel, stdout io.Write
 
 	if options.epub {
 		outputPath := filepath.Join(storage.NovelDir(options.dataPath, novel.ID), novel.ID+".epub")
-		file, err := os.Create(outputPath)
-		if err != nil {
-			return fmt.Errorf("create epub: %w", err)
-		}
-		if err := epub.Build(file, model.ToEPUBBook(novel)); err != nil {
-			closeErr := file.Close()
-			if closeErr != nil {
-				return fmt.Errorf("build epub: %w; close epub: %w", err, closeErr)
-			}
+		if err := buildEPUB(outputPath, model.ToEPUBBook(novel)); err != nil {
 			return err
 		}
-		if err := file.Close(); err != nil {
-			return fmt.Errorf("close epub: %w", err)
-		}
 		_, _ = fmt.Fprintf(stdout, "wrote %s\n", outputPath)
+		if options.kindle {
+			kindlePath, err := createKindle(outputPath)
+			if err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintf(stdout, "wrote %s\n", kindlePath)
+		}
 	}
 
 	return nil
@@ -220,6 +214,7 @@ type webOptions struct {
 	target   string
 	dataPath string
 	epub     bool
+	kindle   bool
 }
 
 func parseWebOptions(command string, args []string) (webOptions, error) {
@@ -236,6 +231,9 @@ func parseWebOptions(command string, args []string) (webOptions, error) {
 		case strings.HasPrefix(arg, "--data="):
 			options.dataPath = strings.TrimPrefix(arg, "--data=")
 		case arg == "--epub":
+			options.epub = true
+		case arg == "--kindle":
+			options.kindle = true
 			options.epub = true
 		case strings.HasPrefix(arg, "-"):
 			return options, fmt.Errorf("unknown option: %s", arg)
@@ -270,6 +268,7 @@ type convertOptions struct {
 	ncode       string
 	libraryPath string
 	outputPath  string
+	kindle      bool
 }
 
 func parseConvertOptions(args []string) (convertOptions, error) {
@@ -293,6 +292,8 @@ func parseConvertOptions(args []string) (convertOptions, error) {
 			i++
 		case strings.HasPrefix(arg, "--output="):
 			options.outputPath = strings.TrimPrefix(arg, "--output=")
+		case arg == "--kindle":
+			options.kindle = true
 		case strings.HasPrefix(arg, "-"):
 			return options, fmt.Errorf("unknown option: %s", arg)
 		case options.ncode == "":
@@ -306,6 +307,49 @@ func parseConvertOptions(args []string) (convertOptions, error) {
 	}
 
 	return options, nil
+}
+
+func buildEPUB(outputPath string, book epub.Book) error {
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("create epub: %w", err)
+	}
+	if err := epub.Build(file, book); err != nil {
+		closeErr := file.Close()
+		if closeErr != nil {
+			return fmt.Errorf("build epub: %w; close epub: %w", err, closeErr)
+		}
+		return fmt.Errorf("build epub: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close epub: %w", err)
+	}
+
+	return nil
+}
+
+func createKindle(epubPath string) (string, error) {
+	outputPath := kindleOutputPath(epubPath)
+	cmd := exec.Command("aphrael", epubPath, outputPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(output))
+		if message == "" {
+			return "", fmt.Errorf("run aphrael: %w", err)
+		}
+		return "", fmt.Errorf("run aphrael: %w: %s", err, message)
+	}
+
+	return outputPath, nil
+}
+
+func kindleOutputPath(epubPath string) string {
+	ext := filepath.Ext(epubPath)
+	if ext == "" {
+		return epubPath + ".mobi"
+	}
+
+	return strings.TrimSuffix(epubPath, ext) + ".mobi"
 }
 
 func convertSectionContent(section *library.Section, resolver *converter.ImageRegistry) (string, error) {
@@ -349,7 +393,7 @@ func entryNcode(entry library.NovelEntry) string {
 
 func writeUsage(stderr io.Writer) {
 	_, _ = fmt.Fprintln(stderr, "usage: narou-go list [--library path]")
-	_, _ = fmt.Fprintln(stderr, "       narou-go convert ncode [--library path] [--output path]")
-	_, _ = fmt.Fprintln(stderr, "       narou-go download [--data path] [--epub] target")
-	_, _ = fmt.Fprintln(stderr, "       narou-go update [--data path] [--epub] id")
+	_, _ = fmt.Fprintln(stderr, "       narou-go convert ncode [--library path] [--output path] [--kindle]")
+	_, _ = fmt.Fprintln(stderr, "       narou-go download [--data path] [--epub] [--kindle] target")
+	_, _ = fmt.Fprintln(stderr, "       narou-go update [--data path] [--epub] [--kindle] id")
 }
