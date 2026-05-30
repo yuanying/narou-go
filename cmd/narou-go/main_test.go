@@ -59,6 +59,28 @@ func TestRunConvertRequiresNcode(t *testing.T) {
 	}
 }
 
+func TestParseWebOptions(t *testing.T) {
+	got, err := parseWebOptions("download", []string{"--epub", "--data", "data-dir", "n9669bk"})
+	if err != nil {
+		t.Fatalf("parseWebOptions() error = %v", err)
+	}
+	if got.target != "n9669bk" || got.dataPath != "data-dir" || !got.epub {
+		t.Fatalf("parseWebOptions() = %#v", got)
+	}
+}
+
+func TestSelectDownloader(t *testing.T) {
+	if _, err := selectDownloader("n9669bk"); err != nil {
+		t.Fatalf("selectDownloader(syosetu) error = %v", err)
+	}
+	if _, err := selectDownloader("https://kakuyomu.jp/works/1177354054880241118"); err != nil {
+		t.Fatalf("selectDownloader(kakuyomu) error = %v", err)
+	}
+	if _, err := selectDownloader("https://example.com/"); err == nil {
+		t.Fatal("selectDownloader() error = nil, want error")
+	}
+}
+
 func fixtureLibraryPath(t *testing.T) string {
 	t.Helper()
 
