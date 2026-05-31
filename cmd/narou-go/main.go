@@ -37,9 +37,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "convert":
 		err = runConvert(args[1:], stdout)
 	case "download":
-		err = runDownload(args[1:], stdout)
+		err = runDownload(args[1:], stdout, stderr)
 	case "update":
-		err = runUpdate(args[1:], stdout)
+		err = runUpdate(args[1:], stdout, stderr)
 	default:
 		writeUsage(stderr)
 		return 2
@@ -98,8 +98,12 @@ func runConvert(args []string, stdout io.Writer) error {
 	return buildFromLibrary(root, *entry, options.outputPath, options.kindle, stdout)
 }
 
-func runDownload(args []string, stdout io.Writer) error {
+func runDownload(args []string, stdout, stderr io.Writer) error {
 	options, err := parseWebOptions("download", args)
+	if err != nil {
+		return err
+	}
+	root, err := library.ResolveRoot(options.libraryPath)
 	if err != nil {
 		return err
 	}
@@ -107,7 +111,23 @@ func runDownload(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	novel, err := d.Download(context.Background(), options.target)
+	db, err := library.LoadDatabase(root)
+	if err != nil {
+		return err
+	}
+	if entry, err := library.FindByTarget(db, options.target); err == nil {
+		existing, err := library.LoadDownloadedNovel(root, *entry)
+		if err != nil {
+			return err
+		}
+		novel, err := d.Update(context.Background(), existing, downloader.WithLog(stderr))
+		if err != nil {
+			return err
+		}
+
+		return saveDownloadedNovel(options, novel, entry, stdout)
+	}
+	novel, err := d.Download(context.Background(), options.target, downloader.WithLog(stderr))
 	if err != nil {
 		return err
 	}
@@ -115,7 +135,7 @@ func runDownload(args []string, stdout io.Writer) error {
 	return saveDownloadedNovel(options, novel, nil, stdout)
 }
 
-func runUpdate(args []string, stdout io.Writer) error {
+func runUpdate(args []string, stdout, stderr io.Writer) error {
 	options, err := parseWebOptions("update", args)
 	if err != nil {
 		return err
@@ -132,12 +152,15 @@ func runUpdate(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	existing := modelFromEntry(*entry)
+	existing, err := library.LoadDownloadedNovel(root, *entry)
+	if err != nil {
+		return err
+	}
 	d, err := selectDownloader(existing.SourceURL)
 	if err != nil {
 		return err
 	}
-	novel, err := d.Update(context.Background(), existing)
+	novel, err := d.Update(context.Background(), existing, downloader.WithLog(stderr))
 	if err != nil {
 		return err
 	}
@@ -336,26 +359,6 @@ func ebookOutputPath(novelDir string, entry library.NovelEntry, outputName strin
 	}
 
 	return filepath.Join(novelDir, library.EBookFileName(entry, ext))
-}
-
-func modelFromEntry(entry library.NovelEntry) *model.Novel {
-	return &model.Novel{
-		ID:        modelIDFromEntry(entry),
-		SourceURL: entry.TocURL,
-		Title:     entry.Title,
-		Author:    entry.Author,
-		NovelType: entry.NovelType,
-		End:       entry.End,
-	}
-}
-
-func modelIDFromEntry(entry library.NovelEntry) string {
-	id := entryNcode(entry)
-	if entry.SiteName == "カクヨム" && !strings.HasPrefix(id, "kakuyomu-") {
-		return "kakuyomu-" + id
-	}
-
-	return strings.ToLower(id)
 }
 
 func buildEPUB(outputPath string, book epub.Book) error {
