@@ -43,7 +43,12 @@ func (d *Downloader) Normalize(input string) (string, error) {
 }
 
 // Download downloads a Kakuyomu work.
-func (d *Downloader) Download(ctx context.Context, input string) (*model.Novel, error) {
+func (d *Downloader) Download(ctx context.Context, input string, opts ...downloader.Option) (*model.Novel, error) {
+	options := downloader.NewOptions(opts...)
+	return d.download(ctx, input, nil, options)
+}
+
+func (d *Downloader) download(ctx context.Context, input string, existing *model.Novel, options downloader.Options) (*model.Novel, error) {
 	workID := WorkID(input)
 	if workID == "" && strings.HasPrefix(input, "kakuyomu-") {
 		workID = strings.TrimPrefix(input, "kakuyomu-")
@@ -61,22 +66,37 @@ func (d *Downloader) Download(ctx context.Context, input string) (*model.Novel, 
 		return nil, err
 	}
 
+	targets := novel.Episodes
+	reasons := make(map[string]string, len(targets))
+	if existing != nil {
+		targets, reasons = downloader.EpisodesToDownload(novel.Episodes, existing.Episodes)
+	}
+	downloader.LogDownloadStart(options.Log, novel, len(targets))
 	var images []model.Image
-	for i := range novel.Episodes {
-		source, err := d.client.GetString(ctx, novel.Episodes[i].URL)
+	for i := range targets {
+		target := targets[i]
+		index := downloader.FindEpisodeIndex(novel.Episodes, target.ID)
+		if index < 0 {
+			continue
+		}
+		downloader.LogEpisodeProgress(options.Log, novel.Episodes[index], i+1, len(targets), reasons[target.ID], novel.NovelType == 1)
+		source, err := d.client.GetString(ctx, novel.Episodes[index].URL)
 		if err != nil {
 			return nil, err
 		}
-		body, imageURLs, err := ParseEpisode(source, novel.Episodes[i].URL)
+		body, imageURLs, err := ParseEpisode(source, novel.Episodes[index].URL)
 		if err != nil {
 			return nil, err
 		}
-		novel.Episodes[i].Preface = ""
-		novel.Episodes[i].Body = body
-		novel.Episodes[i].Afterword = ""
-		novel.Episodes[i].BodyHash = hashBody(body)
-		novel.Episodes[i].DownloadedAt = nowRFC3339()
+		novel.Episodes[index].Preface = ""
+		novel.Episodes[index].Body = body
+		novel.Episodes[index].Afterword = ""
+		novel.Episodes[index].BodyHash = hashBody(body)
+		novel.Episodes[index].DownloadedAt = nowRFC3339()
 		images = append(images, imageURLsToModel(imageURLs)...)
+	}
+	if existing != nil {
+		downloader.MergeUnchangedEpisodes(novel.Episodes, existing.Episodes)
 	}
 	novel.Images = dedupeImages(images)
 
@@ -84,28 +104,9 @@ func (d *Downloader) Download(ctx context.Context, input string) (*model.Novel, 
 }
 
 // Update redownloads metadata and changed/new episodes.
-func (d *Downloader) Update(ctx context.Context, existing *model.Novel) (*model.Novel, error) {
-	latest, err := d.Download(ctx, existing.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	oldByID := make(map[string]model.Episode, len(existing.Episodes))
-	for _, episode := range existing.Episodes {
-		oldByID[episode.ID] = episode
-	}
-	for i, episode := range latest.Episodes {
-		old, ok := oldByID[episode.ID]
-		if ok && episode.UpdatedAt != "" && episode.UpdatedAt == old.UpdatedAt && old.BodyHash != "" {
-			latest.Episodes[i].Preface = old.Preface
-			latest.Episodes[i].Body = old.Body
-			latest.Episodes[i].Afterword = old.Afterword
-			latest.Episodes[i].BodyHash = old.BodyHash
-			latest.Episodes[i].DownloadedAt = old.DownloadedAt
-		}
-	}
-
-	return latest, nil
+func (d *Downloader) Update(ctx context.Context, existing *model.Novel, opts ...downloader.Option) (*model.Novel, error) {
+	options := downloader.NewOptions(opts...)
+	return d.download(ctx, existing.ID, existing, options)
 }
 
 // WorkID extracts a Kakuyomu work ID.

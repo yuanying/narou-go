@@ -44,7 +44,12 @@ func (d *Downloader) Normalize(input string) (string, error) {
 }
 
 // Download downloads a syosetu novel.
-func (d *Downloader) Download(ctx context.Context, input string) (*model.Novel, error) {
+func (d *Downloader) Download(ctx context.Context, input string, opts ...downloader.Option) (*model.Novel, error) {
+	options := downloader.NewOptions(opts...)
+	return d.download(ctx, input, nil, options)
+}
+
+func (d *Downloader) download(ctx context.Context, input string, existing *model.Novel, options downloader.Options) (*model.Novel, error) {
 	ncode, err := d.Normalize(input)
 	if err != nil {
 		return nil, err
@@ -68,26 +73,41 @@ func (d *Downloader) Download(ctx context.Context, input string) (*model.Novel, 
 		}
 	}
 
+	targets := novel.Episodes
+	reasons := make(map[string]string, len(targets))
+	if existing != nil {
+		targets, reasons = downloader.EpisodesToDownload(novel.Episodes, existing.Episodes)
+	}
+	downloader.LogDownloadStart(options.Log, novel, len(targets))
 	var images []model.Image
-	for i := range novel.Episodes {
-		if novel.NovelType == NovelTypeShort && novel.Episodes[i].Body != "" {
+	for i := range targets {
+		target := targets[i]
+		index := downloader.FindEpisodeIndex(novel.Episodes, target.ID)
+		if index < 0 {
+			continue
+		}
+		if novel.NovelType == NovelTypeShort && novel.Episodes[index].Body != "" {
 			images = append(images, novel.Images...)
 			continue
 		}
-		episodeSource, err := d.client.GetString(ctx, novel.Episodes[i].URL)
+		downloader.LogEpisodeProgress(options.Log, novel.Episodes[index], i+1, len(targets), reasons[target.ID], novel.NovelType == NovelTypeSeries)
+		episodeSource, err := d.client.GetString(ctx, novel.Episodes[index].URL)
 		if err != nil {
 			return nil, err
 		}
-		element, imageURLs, err := ParseEpisode(episodeSource, novel.Episodes[i].URL)
+		element, imageURLs, err := ParseEpisode(episodeSource, novel.Episodes[index].URL)
 		if err != nil {
 			return nil, err
 		}
-		novel.Episodes[i].Preface = element.Preface
-		novel.Episodes[i].Body = element.Body
-		novel.Episodes[i].Afterword = element.Afterword
-		novel.Episodes[i].BodyHash = hashBody(element.Preface, element.Body, element.Afterword)
-		novel.Episodes[i].DownloadedAt = time.Now().Format(time.RFC3339)
+		novel.Episodes[index].Preface = element.Preface
+		novel.Episodes[index].Body = element.Body
+		novel.Episodes[index].Afterword = element.Afterword
+		novel.Episodes[index].BodyHash = hashBody(element.Preface, element.Body, element.Afterword)
+		novel.Episodes[index].DownloadedAt = time.Now().Format(time.RFC3339)
 		images = append(images, imageURLsToModel(imageURLs)...)
+	}
+	if existing != nil {
+		downloader.MergeUnchangedEpisodes(novel.Episodes, existing.Episodes)
 	}
 	novel.Images = dedupeImages(images)
 
@@ -117,28 +137,9 @@ func (d *Downloader) appendPagedTOC(ctx context.Context, novel *model.Novel, nco
 }
 
 // Update redownloads metadata and changed/new episodes.
-func (d *Downloader) Update(ctx context.Context, existing *model.Novel) (*model.Novel, error) {
-	latest, err := d.Download(ctx, existing.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	oldByID := make(map[string]model.Episode, len(existing.Episodes))
-	for _, episode := range existing.Episodes {
-		oldByID[episode.ID] = episode
-	}
-	for i, episode := range latest.Episodes {
-		old, ok := oldByID[episode.ID]
-		if ok && episode.UpdatedAt != "" && episode.UpdatedAt == old.UpdatedAt && old.BodyHash != "" {
-			latest.Episodes[i].Preface = old.Preface
-			latest.Episodes[i].Body = old.Body
-			latest.Episodes[i].Afterword = old.Afterword
-			latest.Episodes[i].BodyHash = old.BodyHash
-			latest.Episodes[i].DownloadedAt = old.DownloadedAt
-		}
-	}
-
-	return latest, nil
+func (d *Downloader) Update(ctx context.Context, existing *model.Novel, opts ...downloader.Option) (*model.Novel, error) {
+	options := downloader.NewOptions(opts...)
+	return d.download(ctx, existing.ID, existing, options)
 }
 
 // TOCURL returns the syosetu table-of-contents URL.

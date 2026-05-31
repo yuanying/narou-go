@@ -1,6 +1,7 @@
 package library
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -96,6 +97,55 @@ func TestLoadSection(t *testing.T) {
 	}
 }
 
+func TestLoadDownloadedNovelRestoresBody(t *testing.T) {
+	root := filepath.Join("testdata", "library")
+	db, err := LoadDatabase(root)
+	if err != nil {
+		t.Fatalf("LoadDatabase() error = %v", err)
+	}
+	entry := db[0]
+
+	novel, err := LoadDownloadedNovel(root, entry)
+	if err != nil {
+		t.Fatalf("LoadDownloadedNovel() error = %v", err)
+	}
+
+	if novel.ID != "n1231id" || novel.Title != "サンプル小説" {
+		t.Fatalf("novel = %#v", novel)
+	}
+	if len(novel.Episodes) != 1 {
+		t.Fatalf("len(Episodes) = %d, want 1", len(novel.Episodes))
+	}
+	episode := novel.Episodes[0]
+	if episode.Body == "" || episode.BodyHash == "" {
+		t.Fatalf("episode was not restored: %#v", episode)
+	}
+}
+
+func TestLoadDownloadedNovelKeepsEpisodeWhenSectionMissing(t *testing.T) {
+	root := copyTestLibrary(t)
+	db, err := LoadDatabase(root)
+	if err != nil {
+		t.Fatalf("LoadDatabase() error = %v", err)
+	}
+	entry := db[0]
+	sectionPath := filepath.Join(root, "小説データ", "小説家になろう", "n1231id サンプル小説", "本文", "1 第一話.yaml")
+	if err := os.Remove(sectionPath); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+
+	novel, err := LoadDownloadedNovel(root, entry)
+	if err != nil {
+		t.Fatalf("LoadDownloadedNovel() error = %v", err)
+	}
+	if len(novel.Episodes) != 1 {
+		t.Fatalf("len(Episodes) = %d, want 1", len(novel.Episodes))
+	}
+	if novel.Episodes[0].BodyHash != "" || novel.Episodes[0].Body != "" {
+		t.Fatalf("missing section episode = %#v, want empty body", novel.Episodes[0])
+	}
+}
+
 func TestListSectionFiles(t *testing.T) {
 	novelDir := filepath.Join("testdata", "library", "小説データ", "小説家になろう", "n1231id サンプル小説")
 	files, err := ListSectionFiles(novelDir)
@@ -107,4 +157,36 @@ func TestListSectionFiles(t *testing.T) {
 	if len(files) != len(want) || files[0] != want[0] {
 		t.Fatalf("ListSectionFiles() = %#v, want %#v", files, want)
 	}
+}
+
+func copyTestLibrary(t *testing.T) string {
+	t.Helper()
+
+	src, err := filepath.Abs(filepath.Join("testdata", "library"))
+	if err != nil {
+		t.Fatalf("Abs() error = %v", err)
+	}
+	dst := t.TempDir()
+	if err := filepath.WalkDir(src, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	}); err != nil {
+		t.Fatalf("copy test library: %v", err)
+	}
+
+	return dst
 }
