@@ -14,6 +14,7 @@ func packageOPF(book Book) string {
 	writeBuilder(&b, `    <dc:title>`+escapeXML(book.Title)+`</dc:title>`+"\n")
 	writeBuilder(&b, `    <dc:creator>`+escapeXML(book.Author)+`</dc:creator>`+"\n")
 	writeBuilder(&b, `    <dc:language>`+escapeXML(book.Language)+`</dc:language>`+"\n")
+	writeBuilder(&b, `    <meta name="primary-writing-mode" content="vertical-rl"></meta>`+"\n")
 	writeBuilder(&b, `    <meta property="rendition:layout">reflowable</meta>`+"\n")
 	writeBuilder(&b, `    <meta property="rendition:orientation">auto</meta>`+"\n")
 	writeBuilder(&b, `    <meta property="rendition:spread">auto</meta>`+"\n")
@@ -33,7 +34,7 @@ func packageOPF(book Book) string {
 		writeBuilder(&b, fmt.Sprintf(`    <item id="image-%03d" href="%s" media-type="%s"%s></item>`+"\n", i+1, escapeXML(image.Href), escapeXML(image.MediaType), properties))
 	}
 	writeBuilder(&b, "  </manifest>\n")
-	writeBuilder(&b, "  <spine>\n")
+	writeBuilder(&b, `  <spine page-progression-direction="rtl">`+"\n")
 	for i := range book.Sections {
 		writeBuilder(&b, fmt.Sprintf(`    <itemref idref="p%03d"></itemref>`+"\n", i+1))
 	}

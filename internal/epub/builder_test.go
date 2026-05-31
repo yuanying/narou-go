@@ -75,7 +75,9 @@ func TestBuildWritesMetadataNavigationAndContent(t *testing.T) {
 		`<dc:title>A&amp;B</dc:title>`,
 		`<dc:creator>著者</dc:creator>`,
 		`<dc:language>ja</dc:language>`,
+		`<meta name="primary-writing-mode" content="vertical-rl"></meta>`,
 		`<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"></item>`,
+		`<spine page-progression-direction="rtl">`,
 		`<itemref idref="p001"></itemref>`,
 	} {
 		if !strings.Contains(opf, want) {
