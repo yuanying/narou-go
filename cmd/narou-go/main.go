@@ -310,8 +310,17 @@ func buildFromLibrary(root string, entry library.NovelEntry, outputName string, 
 	}
 
 	imageRegistry := converter.NewImageRegistry(novelDir)
-	sections := make([]epub.Section, 0, len(toc.Subtitles))
+	coverHref := resolveCoverImage(novelDir, imageRegistry)
+	sections := make([]epub.Section, 0, len(toc.Subtitles)*2)
+	var prevChapter string
 	for _, subtitle := range toc.Subtitles {
+		if subtitle.Chapter != "" && subtitle.Chapter != prevChapter {
+			sections = append(sections, epub.Section{
+				Title:       subtitle.Chapter,
+				ChapterPage: true,
+			})
+			prevChapter = subtitle.Chapter
+		}
 		section, err := library.LoadSection(novelDir, subtitle)
 		if err != nil {
 			return err
@@ -328,11 +337,12 @@ func buildFromLibrary(root string, entry library.NovelEntry, outputName string, 
 
 	outputPath := ebookOutputPath(novelDir, entry, outputName, ".epub")
 	if err := buildEPUB(outputPath, epub.Book{
-		Title:    toc.Title,
-		Author:   toc.Author,
-		Language: "ja",
-		Sections: sections,
-		Images:   epubImages(imageRegistry.Assets()),
+		Title:      toc.Title,
+		Author:     toc.Author,
+		Language:   "ja",
+		CoverImage: coverHref,
+		Sections:   sections,
+		Images:     epubImages(imageRegistry.Assets()),
 	}); err != nil {
 		return err
 	}
@@ -419,6 +429,25 @@ func convertSectionContent(section *library.Section, resolver *converter.ImageRe
 	}
 
 	return content.String(), nil
+}
+
+// resolveCoverImage checks for a cover image file in novelDir, registers it with
+// the image registry, and returns the EPUB-local href (e.g. "images/cover.jpg").
+// Returns "" when no cover file is found.
+func resolveCoverImage(novelDir string, registry *converter.ImageRegistry) string {
+	for _, ext := range []string{".jpg", ".jpeg", ".png"} {
+		filename := "cover" + ext
+		if _, err := os.Stat(filepath.Join(novelDir, filename)); err != nil {
+			continue
+		}
+		resolved, err := registry.Resolve(filename)
+		if err != nil {
+			continue
+		}
+		// resolved is "../images/cover.jpg"; strip the leading "../"
+		return strings.TrimPrefix(resolved, "../")
+	}
+	return ""
 }
 
 func epubImages(assets []converter.ImageAsset) []epub.Image {

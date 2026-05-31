@@ -22,6 +22,7 @@ func packageOPF(book Book) string {
 	writeBuilder(&b, "  <manifest>\n")
 	writeBuilder(&b, `    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"></item>`+"\n")
 	writeBuilder(&b, `    <item id="style" href="style/vertical.css" media-type="text/css"></item>`+"\n")
+	writeBuilder(&b, `    <item id="cover-page" href="cover.xhtml" media-type="application/xhtml+xml"></item>`+"\n")
 	for i := range book.Sections {
 		writeBuilder(&b, fmt.Sprintf(`    <item id="p%03d" href="text/p%03d.xhtml" media-type="application/xhtml+xml"></item>`+"\n", i+1, i+1))
 	}
@@ -35,6 +36,7 @@ func packageOPF(book Book) string {
 	}
 	writeBuilder(&b, "  </manifest>\n")
 	writeBuilder(&b, `  <spine page-progression-direction="rtl">`+"\n")
+	writeBuilder(&b, `    <itemref idref="cover-page"></itemref>`+"\n")
 	for i := range book.Sections {
 		writeBuilder(&b, fmt.Sprintf(`    <itemref idref="p%03d"></itemref>`+"\n", i+1))
 	}

@@ -11,17 +11,19 @@ import (
 
 // Book contains the metadata and text sections needed to build an EPUB.
 type Book struct {
-	Title    string
-	Author   string
-	Language string
-	Sections []Section
-	Images   []Image
+	Title      string
+	Author     string
+	Language   string
+	CoverImage string // href of cover image inside EPUB (e.g. "images/cover.jpg")
+	Sections   []Section
+	Images     []Image
 }
 
 // Section is one XHTML content document in the EPUB spine.
 type Section struct {
-	Title   string
-	Content string
+	Title       string
+	Content     string
+	ChapterPage bool // renders as a centered chapter heading page
 }
 
 // Image is one local image file embedded into the EPUB.
@@ -51,6 +53,9 @@ func Build(w io.Writer, book Book) error {
 		return err
 	}
 	if err := writeZipFile(zipWriter, "OEBPS/style/vertical.css", VerticalCSS); err != nil {
+		return err
+	}
+	if err := writeZipFile(zipWriter, "OEBPS/cover.xhtml", coverXHTML(book)); err != nil {
 		return err
 	}
 	for _, image := range book.Images {
