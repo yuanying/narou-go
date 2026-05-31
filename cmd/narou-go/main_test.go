@@ -138,7 +138,9 @@ func TestParseWebOptionsKindleImpliesEPUB(t *testing.T) {
 func TestCreateKindleRunsAphrael(t *testing.T) {
 	binDir := t.TempDir()
 	script := filepath.Join(binDir, "aphrael")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\ncp \"$1\" \"$2\"\n"), 0o755); err != nil {
+	argsPath := filepath.Join(t.TempDir(), "args")
+	scriptContent := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + shellQuote(argsPath) + "\ncp \"$1\" \"$2\"\n"
+	if err := os.WriteFile(script, []byte(scriptContent), 0o755); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -158,6 +160,18 @@ func TestCreateKindleRunsAphrael(t *testing.T) {
 	if _, err := os.Stat(got); err != nil {
 		t.Fatalf("kindle output was not created: %v", err)
 	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatalf("ReadFile(args) error = %v", err)
+	}
+	wantArgs := epubPath + "\n" + got + "\n--mobi-file-type\nboth\n"
+	if string(args) != wantArgs {
+		t.Fatalf("aphrael args = %q, want %q", string(args), wantArgs)
+	}
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 func TestSelectDownloader(t *testing.T) {

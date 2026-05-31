@@ -382,7 +382,7 @@ func buildEPUB(outputPath string, book epub.Book) error {
 
 func createKindle(epubPath string) (string, error) {
 	outputPath := kindleOutputPath(epubPath)
-	cmd := exec.Command("aphrael", epubPath, outputPath)
+	cmd := exec.Command("aphrael", epubPath, outputPath, "--mobi-file-type", "both")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		message := strings.TrimSpace(string(output))
