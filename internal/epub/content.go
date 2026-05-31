@@ -1,10 +1,26 @@
 package epub
 
 func contentXHTML(section Section) string {
+	if section.ChapterPage {
+		return xhtmlHeader(section.Title, "../style/vertical.css") +
+			`<body><div class="chapter-page"><h1>` + escapeXML(section.Title) + `</h1></div></body></html>`
+	}
 	return xhtmlHeader(section.Title, "../style/vertical.css") +
 		`<body><h1>` + escapeXML(section.Title) + `</h1>` +
 		section.Content +
 		`</body></html>`
+}
+
+func coverXHTML(book Book) string {
+	var img string
+	if book.CoverImage != "" {
+		img = `<img src="` + escapeXML(book.CoverImage) + `" alt="" />`
+	}
+	return xhtmlHeader(book.Title, "style/vertical.css") +
+		`<body><div class="cover">` + img +
+		`<p class="cover-title">` + escapeXML(book.Title) + `</p>` +
+		`<p class="cover-author">` + escapeXML(book.Author) + `</p>` +
+		`</div></body></html>`
 }
 
 func xhtmlHeader(title, stylesheet string) string {
