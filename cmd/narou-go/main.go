@@ -8,8 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
+	"time"
 
 	"github.com/yuanying/narou-go/internal/converter"
 	"github.com/yuanying/narou-go/internal/downloader"
@@ -18,7 +18,6 @@ import (
 	"github.com/yuanying/narou-go/internal/epub"
 	"github.com/yuanying/narou-go/internal/library"
 	"github.com/yuanying/narou-go/internal/model"
-	"github.com/yuanying/narou-go/internal/storage"
 )
 
 func main() {
@@ -56,25 +55,21 @@ func run(args []string, stdout, stderr io.Writer) int {
 func runList(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("list", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	libraryPath := flags.String("library", "./library", "narou.rb library path")
+	libraryPath := flags.String("library", "", "narou.rb library path")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-
-	db, err := library.LoadDatabase(*libraryPath)
+	root, err := library.ResolveRoot(*libraryPath)
 	if err != nil {
 		return err
 	}
 
-	entries := make([]library.NovelEntry, 0, len(db))
-	for _, entry := range db {
-		entries = append(entries, entry)
+	db, err := library.LoadDatabase(root)
+	if err != nil {
+		return err
 	}
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].ID < entries[j].ID
-	})
 
-	for _, entry := range entries {
+	for _, entry := range library.Entries(db) {
 		_, _ = fmt.Fprintf(stdout, "%d\t%s\t%s\t%s\t%s\n", entry.ID, entryNcode(entry), entry.SiteName, entry.Title, entry.Author)
 	}
 
@@ -87,7 +82,11 @@ func runConvert(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	db, err := library.LoadDatabase(options.libraryPath)
+	root, err := library.ResolveRoot(options.libraryPath)
+	if err != nil {
+		return err
+	}
+	db, err := library.LoadDatabase(root)
 	if err != nil {
 		return err
 	}
@@ -96,53 +95,7 @@ func runConvert(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	novelDir := library.NovelDir(options.libraryPath, *entry)
-	toc, err := library.LoadTOC(novelDir)
-	if err != nil {
-		return err
-	}
-
-	imageRegistry := converter.NewImageRegistry(novelDir)
-	sections := make([]epub.Section, 0, len(toc.Subtitles))
-	for _, subtitle := range toc.Subtitles {
-		section, err := library.LoadSection(novelDir, subtitle)
-		if err != nil {
-			return err
-		}
-		content, err := convertSectionContent(section, imageRegistry)
-		if err != nil {
-			return err
-		}
-		sections = append(sections, epub.Section{
-			Title:   section.Subtitle,
-			Content: content,
-		})
-	}
-
-	outputPath := options.outputPath
-	if outputPath == "" {
-		outputPath = entry.Title + ".epub"
-	}
-	if err := buildEPUB(outputPath, epub.Book{
-		Title:    toc.Title,
-		Author:   toc.Author,
-		Language: "ja",
-		Sections: sections,
-		Images:   epubImages(imageRegistry.Assets()),
-	}); err != nil {
-		return err
-	}
-
-	_, _ = fmt.Fprintf(stdout, "wrote %s\n", outputPath)
-	if options.kindle {
-		kindlePath, err := createKindle(outputPath)
-		if err != nil {
-			return err
-		}
-		_, _ = fmt.Fprintf(stdout, "wrote %s\n", kindlePath)
-	}
-
-	return nil
+	return buildFromLibrary(root, *entry, options.outputPath, options.kindle, stdout)
 }
 
 func runDownload(args []string, stdout io.Writer) error {
@@ -159,7 +112,7 @@ func runDownload(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	return saveDownloadedNovel(options, novel, stdout)
+	return saveDownloadedNovel(options, novel, nil, stdout)
 }
 
 func runUpdate(args []string, stdout io.Writer) error {
@@ -167,10 +120,19 @@ func runUpdate(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	existing, err := storage.LoadNovel(options.dataPath, options.target)
+	root, err := library.ResolveRoot(options.libraryPath)
 	if err != nil {
 		return err
 	}
+	db, err := library.LoadDatabase(root)
+	if err != nil {
+		return err
+	}
+	entry, err := library.FindByTarget(db, options.target)
+	if err != nil {
+		return err
+	}
+	existing := modelFromEntry(*entry)
 	d, err := selectDownloader(existing.SourceURL)
 	if err != nil {
 		return err
@@ -180,56 +142,64 @@ func runUpdate(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	return saveDownloadedNovel(options, novel, stdout)
+	return saveDownloadedNovel(options, novel, entry, stdout)
 }
 
-func saveDownloadedNovel(options webOptions, novel *model.Novel, stdout io.Writer) error {
-	httpClient := downloader.NewHTTPClient()
-	imageDir := filepath.Join(storage.NovelDir(options.dataPath, novel.ID), "images")
-	novel.Images = downloader.DownloadImages(context.Background(), httpClient, novel.Images, imageDir)
-	if err := storage.SaveNovel(options.dataPath, novel); err != nil {
+func saveDownloadedNovel(options webOptions, novel *model.Novel, existing *library.NovelEntry, stdout io.Writer) error {
+	root, err := library.ResolveRoot(options.libraryPath)
+	if err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(stdout, "saved %s\n", storage.NovelDir(options.dataPath, novel.ID))
+	now := time.Now()
+	var entry *library.NovelEntry
+	if existing == nil {
+		entry, err = library.SaveDownloadedNovel(root, novel, now)
+	} else {
+		entry, err = library.UpdateDownloadedNovel(root, *existing, novel, now)
+	}
+	if err != nil {
+		return err
+	}
 
-	if options.epub {
-		outputPath := filepath.Join(storage.NovelDir(options.dataPath, novel.ID), novel.ID+".epub")
-		if err := buildEPUB(outputPath, model.ToEPUBBook(novel)); err != nil {
+	httpClient := downloader.NewHTTPClient()
+	imageDir := filepath.Join(library.NovelDir(root, *entry), "挿絵")
+	novel.Images = downloader.DownloadImages(context.Background(), httpClient, novel.Images, imageDir)
+	if len(novel.Images) > 0 {
+		entry, err = library.UpdateDownloadedNovel(root, *entry, novel, now)
+		if err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintf(stdout, "wrote %s\n", outputPath)
-		if options.kindle {
-			kindlePath, err := createKindle(outputPath)
-			if err != nil {
-				return err
-			}
-			_, _ = fmt.Fprintf(stdout, "wrote %s\n", kindlePath)
-		}
+	}
+	novelDir := library.NovelDir(root, *entry)
+	_, _ = fmt.Fprintf(stdout, "saved %s\n", novelDir)
+
+	if options.epub {
+		return buildFromLibrary(root, *entry, "", options.kindle, stdout)
 	}
 
 	return nil
 }
 
 type webOptions struct {
-	target   string
-	dataPath string
-	epub     bool
-	kindle   bool
+	target      string
+	libraryPath string
+	epub        bool
+	kindle      bool
 }
 
 func parseWebOptions(command string, args []string) (webOptions, error) {
-	options := webOptions{dataPath: "./data"}
+	options := webOptions{}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
-		case arg == "--data":
+		case arg == "--library":
 			if i+1 >= len(args) {
-				return options, fmt.Errorf("--data requires a value")
+				return options, fmt.Errorf("--library requires a value")
 			}
-			options.dataPath = args[i+1]
+			options.libraryPath = args[i+1]
 			i++
-		case strings.HasPrefix(arg, "--data="):
-			options.dataPath = strings.TrimPrefix(arg, "--data=")
+		case strings.HasPrefix(arg, "--library="):
+			options.libraryPath = strings.TrimPrefix(arg, "--library=")
 		case arg == "--epub":
 			options.epub = true
 		case arg == "--kindle":
@@ -272,7 +242,7 @@ type convertOptions struct {
 }
 
 func parseConvertOptions(args []string) (convertOptions, error) {
-	options := convertOptions{libraryPath: "./library"}
+	options := convertOptions{}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
@@ -307,6 +277,85 @@ func parseConvertOptions(args []string) (convertOptions, error) {
 	}
 
 	return options, nil
+}
+
+func buildFromLibrary(root string, entry library.NovelEntry, outputName string, kindle bool, stdout io.Writer) error {
+	novelDir := library.NovelDir(root, entry)
+	toc, err := library.LoadTOC(novelDir)
+	if err != nil {
+		return err
+	}
+
+	imageRegistry := converter.NewImageRegistry(novelDir)
+	sections := make([]epub.Section, 0, len(toc.Subtitles))
+	for _, subtitle := range toc.Subtitles {
+		section, err := library.LoadSection(novelDir, subtitle)
+		if err != nil {
+			return err
+		}
+		content, err := convertSectionContent(section, imageRegistry)
+		if err != nil {
+			return err
+		}
+		sections = append(sections, epub.Section{
+			Title:   section.Subtitle,
+			Content: content,
+		})
+	}
+
+	outputPath := ebookOutputPath(novelDir, entry, outputName, ".epub")
+	if err := buildEPUB(outputPath, epub.Book{
+		Title:    toc.Title,
+		Author:   toc.Author,
+		Language: "ja",
+		Sections: sections,
+		Images:   epubImages(imageRegistry.Assets()),
+	}); err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(stdout, "wrote %s\n", outputPath)
+	if kindle {
+		kindlePath, err := createKindle(outputPath)
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(stdout, "wrote %s\n", kindlePath)
+	}
+
+	return nil
+}
+
+func ebookOutputPath(novelDir string, entry library.NovelEntry, outputName string, ext string) string {
+	if outputName != "" {
+		name := filepath.Base(outputName)
+		if filepath.Ext(name) == "" {
+			name += ext
+		}
+		return filepath.Join(novelDir, name)
+	}
+
+	return filepath.Join(novelDir, library.EBookFileName(entry, ext))
+}
+
+func modelFromEntry(entry library.NovelEntry) *model.Novel {
+	return &model.Novel{
+		ID:        modelIDFromEntry(entry),
+		SourceURL: entry.TocURL,
+		Title:     entry.Title,
+		Author:    entry.Author,
+		NovelType: entry.NovelType,
+		End:       entry.End,
+	}
+}
+
+func modelIDFromEntry(entry library.NovelEntry) string {
+	id := entryNcode(entry)
+	if entry.SiteName == "カクヨム" && !strings.HasPrefix(id, "kakuyomu-") {
+		return "kakuyomu-" + id
+	}
+
+	return strings.ToLower(id)
 }
 
 func buildEPUB(outputPath string, book epub.Book) error {
@@ -394,6 +443,6 @@ func entryNcode(entry library.NovelEntry) string {
 func writeUsage(stderr io.Writer) {
 	_, _ = fmt.Fprintln(stderr, "usage: narou-go list [--library path]")
 	_, _ = fmt.Fprintln(stderr, "       narou-go convert ncode [--library path] [--output path] [--kindle]")
-	_, _ = fmt.Fprintln(stderr, "       narou-go download [--data path] [--epub] [--kindle] target")
-	_, _ = fmt.Fprintln(stderr, "       narou-go update [--data path] [--epub] [--kindle] id")
+	_, _ = fmt.Fprintln(stderr, "       narou-go download [--library path] [--epub] [--kindle] target")
+	_, _ = fmt.Fprintln(stderr, "       narou-go update [--library path] [--epub] [--kindle] id")
 }

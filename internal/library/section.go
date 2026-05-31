@@ -20,6 +20,7 @@ type Section struct {
 	FileSubtitle string  `yaml:"file_subtitle"`
 	Subdate      string  `yaml:"subdate"`
 	Subupdate    string  `yaml:"subupdate"`
+	DownloadTime string  `yaml:"download_time,omitempty"`
 	Element      Element `yaml:"element"`
 }
 

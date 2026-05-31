@@ -44,27 +44,28 @@ go run ./cmd/narou-go list --library ./library
 go install ./cmd/narou-go
 ```
 
-インストール後、narou.rb の `library/` がある場所で確認します。
+インストール後、narou.rb の library root で確認します。
 
 ```bash
-narou-go list --library ./library
+cd /path/to/narou-library
+narou-go list
 ```
 
 ## 既存の narou.rb library から EPUB を作る
 
-既存の narou.rb の `library/` がある場合、そのまま指定できます。
+既存の narou.rb の library root でそのまま実行できます。
 
 ```bash
-narou-go list --library ./library
+narou-go list
 ```
 
 作品を EPUB に変換します。
 
 ```bash
-narou-go convert n9669bk --library ./library --output book.epub
+narou-go convert n9669bk --output book.epub
 ```
 
-`--output` を省略すると、作品タイトルを使った `.epub` がカレントディレクトリに作られます。
+`--output` を省略すると、narou.rb と同じ `[作者名] 作品タイトル.epub` が小説保存フォルダに作られます。
 
 ## Web からダウンロードする
 
@@ -81,22 +82,28 @@ narou-go download https://ncode.syosetu.com/n9669bk/
 narou-go download https://kakuyomu.jp/works/16817330668905575239
 ```
 
-ダウンロード結果はデフォルトで `data/` に保存されます。
+ダウンロード結果は narou.rb 互換の library 形式で、カレントディレクトリに保存されます。
+narou.rb の library 内で実行すると、そのまま `narou list` でも表示できます。
 
 ```text
-data/
-├── n9669bk/
-│   ├── novel.yaml
-│   └── images/
-└── kakuyomu-16817330668905575239/
-    ├── novel.yaml
-    └── images/
+./
+├── .narou/
+│   └── database.yaml
+└── 小説データ/
+    ├── 小説家になろう/
+    │   └── n9669bk 作品タイトル/
+    │       ├── toc.yaml
+    │       └── 本文/
+    └── カクヨム/
+        └── 16817330668905575239 作品タイトル/
+            ├── toc.yaml
+            └── 本文/
 ```
 
-保存先を変える場合は `--data` を指定します。
+保存先を明示する場合は `--library` を指定します。
 
 ```bash
-narou-go download --data ./my-data n9669bk
+narou-go download --library ./my-library n9669bk
 ```
 
 ## ダウンロードと同時に EPUB を作る
@@ -110,7 +117,7 @@ narou-go download --epub n9669bk
 出力例:
 
 ```text
-data/n9669bk/n9669bk.epub
+小説データ/小説家になろう/n9669bk 作品タイトル/[作者名] 作品タイトル.epub
 ```
 
 ## Kindle 形式を作る
@@ -124,8 +131,8 @@ narou-go download --kindle n9669bk
 出力例:
 
 ```text
-data/n9669bk/n9669bk.epub
-data/n9669bk/n9669bk.mobi
+小説データ/小説家になろう/n9669bk 作品タイトル/[作者名] 作品タイトル.epub
+小説データ/小説家になろう/n9669bk 作品タイトル/[作者名] 作品タイトル.mobi
 ```
 
 既存の narou.rb `library/` から変換するときも使えます。
@@ -137,8 +144,8 @@ narou-go convert n9669bk --library ./library --output book.epub --kindle
 この場合は次のように出力されます。
 
 ```text
-book.epub
-book.mobi
+library/小説データ/小説家になろう/n9669bk 作品タイトル/book.epub
+library/小説データ/小説家になろう/n9669bk 作品タイトル/book.mobi
 ```
 
 ## 更新する
@@ -157,10 +164,10 @@ narou-go update --epub n9669bk
 narou-go update --kindle kakuyomu-16817330668905575239
 ```
 
-保存先を変えている場合は、更新時も同じ `--data` を指定してください。
+保存先を明示している場合は、更新時も同じ `--library` を指定してください。
 
 ```bash
-narou-go update --data ./my-data --kindle n9669bk
+narou-go update --library ./my-library --kindle n9669bk
 ```
 
 ## 対応サイト
@@ -178,8 +185,8 @@ narou-go update --data ./my-data --kindle n9669bk
 ```bash
 narou-go list [--library path]
 narou-go convert ncode [--library path] [--output path] [--kindle]
-narou-go download [--data path] [--epub] [--kindle] target
-narou-go update [--data path] [--epub] [--kindle] id
+narou-go download [--library path] [--epub] [--kindle] target
+narou-go update [--library path] [--epub] [--kindle] id
 ```
 
 ## 開発者向け

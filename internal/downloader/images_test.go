@@ -49,3 +49,10 @@ func TestDownloadImagesDedupesAndContinuesOnFailure(t *testing.T) {
 		t.Fatalf("missing image = %#v", images[2])
 	}
 }
+
+func TestImageFileNameUsesMiteminICode(t *testing.T) {
+	got := imageFileName("https://12345.mitemin.net/userpageimage/viewimage/icode/514881/", ".jpg")
+	if got != "i514881.jpg" {
+		t.Fatalf("imageFileName() = %q, want i514881.jpg", got)
+	}
+}
