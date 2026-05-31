@@ -106,16 +106,10 @@ narou-go update [--library path] [--epub] [--kindle] id_or_url
 - `database.yaml` から既存作品を探し、同じ小説ディレクトリを更新する
 - 見つからない場合はエラーにする
 
-### 互換オプション
+### 旧 `--data` オプション
 
-既存の `--data` は廃止予定とする。
-
-移行期間中は次のどちらかを選ぶ。
-
-- 推奨: `--data` を指定されたらエラーにし、`--library` への変更を促す
-- 互換重視: `--data` を受け付けるが deprecated warning を出し、旧形式保存だけを行う
-
-最終的には `internal/storage` と `data/` 保存仕様を削除する。
+既存の `--data` は削除する。
+指定された場合は通常の unknown option として扱い、旧 `data/` 形式保存は行わない。
 
 ## 書き込むディレクトリ構造
 
@@ -407,6 +401,29 @@ https://12345.mitemin.net/userpageimage/viewimage/icode/514881/
 
 カクヨムなど mitemin でない画像は、本文中の `src` を `挿絵/{filename}` または `{filename}` に書き換え、対応するファイルを `挿絵/` に置く。
 
+## EPUB / MOBI 出力
+
+`download --epub`、`download --kindle`、`convert` は narou.rb と同じく小説ディレクトリ直下に書籍ファイルを出力する。
+
+```text
+{novel_dir}/[作者名] 作品タイトル.epub
+{novel_dir}/[作者名] 作品タイトル.mobi
+```
+
+`--output` が指定された場合は narou.rb と同じくディレクトリ部分を無視し、basename のみを小説ディレクトリ直下に使う。
+
+```bash
+narou-go convert n9669bk --output /tmp/book.epub
+```
+
+この場合の出力先:
+
+```text
+{novel_dir}/book.epub
+```
+
+`download --epub` と `download --kindle` は、保存後に生成した EPUB/MOBI のパスを stdout に表示する。
+
 ## update 仕様
 
 `update` は既存の小説ディレクトリを上書き更新する。
@@ -457,7 +474,7 @@ narou-go もこれに合わせ、`本文/` 直下以外の YAML について `.b
 
 対象:
 
-- `library/.narou/database.yaml`
+- `{library_root}/.narou/database.yaml`
 - `{novel_dir}/toc.yaml`
 
 `本文/*.yaml` の `.backup` 作成は narou.rb と同じく必須にしない。作成しても narou-go の `ListSectionFiles` は `.yaml.backup` を無視できるが、最小互換では作らない。
@@ -502,15 +519,14 @@ internal/librarywriter
 
 ### CLI 変更
 
-- `webOptions.dataPath` を `libraryPath` に置き換える
-- `parseWebOptions` は `--library` を読む
-- `runDownload` は `storage.SaveNovel` ではなく library writer を呼ぶ
-- `runUpdate` は `storage.LoadNovel` ではなく `database.yaml` から既存作品を探して再ダウンロードする
+- `webOptions` は `libraryPath` を持ち、`--library` を読む
+- `runDownload` は library writer を呼ぶ
+- `runUpdate` は `database.yaml` から既存作品を探して再ダウンロードする
 - `download --epub` は保存後に `runConvert` 相当の library 読み込み経路を使う
 
-### 削除候補
+### 削除対象
 
-library 書き込み移行後、以下は削除候補になる。
+library 書き込み移行により、以下を削除する。
 
 - `internal/storage`
 - `docs/web-download.md` の `data/{id}/novel.yaml` 記述
@@ -536,7 +552,7 @@ TDD で以下から追加する。
 1. library writer のテストを追加する
 2. `model.Novel` から `NovelEntry`、`TOC`、`Section` への変換を実装する
 3. `--library` 省略時の library root 解決を実装する
-4. `download` の library 書き込みを実装し、`--data` を非推奨にする
+4. `download` の library 書き込みを実装し、`--data` を削除する
 5. `update` の library 更新を実装する
 6. README と `docs/web-download.md` を更新する
 7. `internal/storage` を削除する
@@ -547,4 +563,3 @@ TDD で以下から追加する。
 - `last_update` などの日時フォーマットを UTC にするか、ローカルタイムにするか
 - カクヨム画像のローカルファイル名をどの規則に固定するか
 - `length` を本文 HTML から計算するか、当面 `0` にするか
-- `--data` を即削除するか、1 リリースだけ deprecated とするか

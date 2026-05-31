@@ -49,5 +49,5 @@
 - サイトごとに `internal/downloader/syosetu` と `internal/downloader/kakuyomu` へ分離する。
 - 共通 HTTP は `internal/downloader.Client` に集約し、User-Agent、context、timeout、retry、wait、429/5xx backoff を実装する。
 - 外部サイトへの通常テストは行わず、HTML/JSON fixture と fake HTTP transport で検証する。
-- 保存先は新規の Go 版保存形式として `data/{id}/novel.yaml` と `data/{id}/images/` を使う。
-- `download --epub` は保存後に既存 EPUB builder を呼び出す。
+- 保存先は narou.rb 互換 library root とし、`.narou/database.yaml`、`toc.yaml`、`本文/*.yaml`、`挿絵/` を書く。
+- `download --epub` は保存後に library の小説ディレクトリ直下へ EPUB を出力する。

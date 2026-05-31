@@ -27,6 +27,7 @@ type Subtitle struct {
 	FileSubtitle string `yaml:"file_subtitle"`
 	Subdate      string `yaml:"subdate"`
 	Subupdate    string `yaml:"subupdate"`
+	DownloadTime string `yaml:"download_time,omitempty"`
 }
 
 // LoadTOC reads a novel toc.yaml.

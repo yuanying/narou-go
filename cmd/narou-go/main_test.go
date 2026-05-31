@@ -25,19 +25,39 @@ func TestRunList(t *testing.T) {
 	}
 }
 
-func TestRunConvert(t *testing.T) {
-	output := filepath.Join(t.TempDir(), "sample.epub")
+func TestRunListUsesCurrentLibraryRoot(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := run([]string{"convert", "n1231id", "--library", fixtureLibraryPath(t), "--output", output}, &stdout, &stderr)
+	root, err := filepath.Abs(fixtureLibraryPath(t))
+	if err != nil {
+		t.Fatalf("Abs() error = %v", err)
+	}
+	t.Chdir(root)
+
+	code := run([]string{"list"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("run() code = %d, stderr = %s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), output) {
-		t.Fatalf("convert output = %q, want output path", stdout.String())
+	if got := stdout.String(); !strings.Contains(got, "サンプル小説") {
+		t.Fatalf("list output = %q, want sample novel", got)
+	}
+}
+
+func TestRunConvert(t *testing.T) {
+	libraryPath := copyFixtureLibrary(t)
+	output := filepath.Join(t.TempDir(), "sample.epub")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"convert", "n1231id", "--library", libraryPath, "--output", output}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run() code = %d, stderr = %s", code, stderr.String())
+	}
+	converted := filepath.Join(libraryPath, "小説データ", "小説家になろう", "n1231id サンプル小説", "sample.epub")
+	if !strings.Contains(stdout.String(), converted) {
+		t.Fatalf("convert output = %q, want output path %q", stdout.String(), converted)
 	}
 
-	reader, err := zip.OpenReader(output)
+	reader, err := zip.OpenReader(converted)
 	if err != nil {
 		t.Fatalf("OpenReader() error = %v", err)
 	}
@@ -48,6 +68,25 @@ func TestRunConvert(t *testing.T) {
 	}
 	if !zipHasFile(&reader.Reader, "OEBPS/text/p001.xhtml") {
 		t.Fatal("converted EPUB missing OEBPS/text/p001.xhtml")
+	}
+}
+
+func TestRunConvertDefaultOutputUsesNovelDirectory(t *testing.T) {
+	libraryPath := copyFixtureLibrary(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := run([]string{"convert", "n1231id", "--library", libraryPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run() code = %d, stderr = %s", code, stderr.String())
+	}
+
+	converted := filepath.Join(libraryPath, "小説データ", "小説家になろう", "n1231id サンプル小説", "[テスト著者] サンプル小説.epub")
+	if !strings.Contains(stdout.String(), converted) {
+		t.Fatalf("convert output = %q, want output path %q", stdout.String(), converted)
+	}
+	if _, err := os.Stat(converted); err != nil {
+		t.Fatalf("converted file missing: %v", err)
 	}
 }
 
@@ -71,12 +110,18 @@ func TestParseConvertOptionsKindle(t *testing.T) {
 }
 
 func TestParseWebOptions(t *testing.T) {
-	got, err := parseWebOptions("download", []string{"--epub", "--data", "data-dir", "n9669bk"})
+	got, err := parseWebOptions("download", []string{"--epub", "--library", "library-dir", "n9669bk"})
 	if err != nil {
 		t.Fatalf("parseWebOptions() error = %v", err)
 	}
-	if got.target != "n9669bk" || got.dataPath != "data-dir" || !got.epub {
+	if got.target != "n9669bk" || got.libraryPath != "library-dir" || !got.epub {
 		t.Fatalf("parseWebOptions() = %#v", got)
+	}
+}
+
+func TestParseWebOptionsRejectsData(t *testing.T) {
+	if _, err := parseWebOptions("download", []string{"--data", "data-dir", "n9669bk"}); err == nil {
+		t.Fatal("parseWebOptions() error = nil, want unknown option")
 	}
 }
 
@@ -131,6 +176,38 @@ func fixtureLibraryPath(t *testing.T) string {
 	t.Helper()
 
 	return filepath.Join("..", "..", "internal", "library", "testdata", "library")
+}
+
+func copyFixtureLibrary(t *testing.T) string {
+	t.Helper()
+
+	src, err := filepath.Abs(fixtureLibraryPath(t))
+	if err != nil {
+		t.Fatalf("Abs() error = %v", err)
+	}
+	dst := t.TempDir()
+	if err := filepath.WalkDir(src, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	}); err != nil {
+		t.Fatalf("copy fixture library: %v", err)
+	}
+
+	return dst
 }
 
 func zipHasFile(reader *zip.Reader, name string) bool {

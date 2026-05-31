@@ -7,10 +7,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/yuanying/narou-go/internal/model"
 )
+
+var miteminImagePathPattern = regexp.MustCompile(`/icode/([0-9]+)/?`)
 
 // DownloadImages downloads novel images into imageDir. Failures are warnings on the image.
 func DownloadImages(ctx context.Context, client *HTTPClient, images []model.Image, imageDir string) []model.Image {
@@ -82,6 +85,12 @@ func imageExtension(rawURL string, contentType string) (string, error) {
 func imageFileName(rawURL string, ext string) string {
 	parsed, err := url.Parse(rawURL)
 	if err == nil {
+		if strings.HasSuffix(parsed.Host, ".mitemin.net") {
+			matches := miteminImagePathPattern.FindStringSubmatch(parsed.Path)
+			if len(matches) == 2 {
+				return "i" + matches[1] + ext
+			}
+		}
 		base := filepath.Base(parsed.Path)
 		if base != "." && base != "/" && base != "" && filepath.Ext(base) != "" {
 			return base
